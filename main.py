@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from scipy.stats import poisson
 
 # --- 1. CONFIGURACIÓN ---
-st.set_page_config(page_title="SIGMA | OLYMPUS v22.0", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="SIGMA | OLYMPUS v22.1", layout="wide", page_icon="🛡️")
 st.markdown("""<style>.stApp {background-color: #0e1117;} h1, h2, h3 {color: #f3f4f6;} .stDataFrame {border: 1px solid #374151;}</style>""", unsafe_allow_html=True)
 
 # --- 2. DICCIONARIO DE IDIOMAS ---
@@ -16,7 +16,7 @@ TRANSLATIONS = {
         "nav_label": "Navegación:", "nav_options": ["📡 ESCÁNER", "💰 MI CARTERA", "🧪 WAR ROOM"], "radars_label": "📡 Radares Activos:",
         "calibration_label": "🎚️ CALIBRACIÓN", "mode_label": "Modo Táctico:", "run_btn": "🚀 INICIAR BARRIDO", "analyzing": "Analizando Datos...",
         "no_data": "Sin datos para {}", "access_denied": "❌ Acceso Denegado: Requiere Plan {}", "results_table": "🎯 OBJETIVOS PRIORITARIOS",
-        "no_results": "❄️ Sin resultados bajo estos parámetros.", "save_btn": "✅ GUARDAR EN CARTERA", "portfolio_title": "💰 GESTIÓN DE PATRIMONIO",
+        "no_results": "❄️ Sin resultados o Escáner no iniciado.", "save_btn": "✅ GUARDAR EN CARTERA", "portfolio_title": "💰 GESTIÓN DE PATRIMONIO",
         "clean_btn": "🗑️ Limpiar Cartera", "war_room_title": "🧪 LABORATORIO (ADMIN)", "login_title": "🛡️ SIGMA OLYMPUS",
         "login_input": "Licencia de Software:", "login_error": "❌ Licencia no válida."
     },
@@ -25,7 +25,7 @@ TRANSLATIONS = {
         "nav_label": "Navigation:", "nav_options": ["📡 SCANNER", "💰 MY PORTFOLIO", "🧪 WAR ROOM"], "radars_label": "📡 Active Radars:",
         "calibration_label": "🎚️ CALIBRATION", "mode_label": "Tactical Mode:", "run_btn": "🚀 START SCAN", "analyzing": "Analyzing Data...",
         "no_data": "No data for {}", "access_denied": "❌ Access Denied: Requires {} Plan", "results_table": "🎯 PRIORITY TARGETS",
-        "no_results": "❄️ No results found under current parameters.", "save_btn": "✅ ADD TO PORTFOLIO", "portfolio_title": "💰 WEALTH MANAGEMENT",
+        "no_results": "❄️ No results or Scanner not started.", "save_btn": "✅ ADD TO PORTFOLIO", "portfolio_title": "💰 WEALTH MANAGEMENT",
         "clean_btn": "🗑️ Clear Portfolio", "war_room_title": "🧪 LABORATORY (ADMIN)", "login_title": "🛡️ SIGMA OLYMPUS",
         "login_input": "Software License Key:", "login_error": "❌ Invalid License."
     }
@@ -54,27 +54,33 @@ def check_license(lang_code):
 
 # --- 4. GESTIÓN CARTERA Y CACHÉ ---
 if 'portfolio' not in st.session_state: st.session_state['portfolio'] = []
+if 'last_results' not in st.session_state: st.session_state['last_results'] = [] # Persistencia
+
 def guardar_apuesta(bet_data):
-    if bet_data not in st.session_state['portfolio']: st.session_state['portfolio'].append(bet_data); st.toast("✅ Saved")
+    if bet_data not in st.session_state['portfolio']: 
+        st.session_state['portfolio'].append(bet_data)
+        st.toast("✅ Saved / Guardado")
+    else:
+        st.toast("⚠️ Already in Portfolio")
 
 @st.cache_data(ttl=300) 
 def obtener_datos_api(sport, api_key):
     try: return requests.get(f'https://api.the-odds-api.com/v4/sports/{sport}/odds/?regions=us&markets=h2h&oddsFormat=decimal&apiKey={api_key}').json()
     except: return []
 
-# --- 5. CONFIGURACIÓN DE ACTIVOS (EXPANSIÓN TOTAL) ---
+# --- 5. CONFIGURACIÓN DE ACTIVOS ---
 SPORTS_CONFIG = {
-    # 🌍 EVENTOS PPV (Gancho)
+    # 🌍 EVENTOS PPV
     "soccer_fifa_world_cup": {"name": "🏆 COPA MUNDIAL", "type": "National", "min_plan": "EventPass"},
-    "mma_mixed_martial_arts_ufc": {"name": "🥋 UFC / MMA", "type": "National", "min_plan": "EventPass"}, 
+    "mma_mixed_martial_arts_ufc": {"name": "🥊 UFC / MMA", "type": "National", "min_plan": "EventPass"}, 
     "boxing_boxing": {"name": "🥊 BOXEO ESTELAR", "type": "National", "min_plan": "EventPass"},
     
     # 🌎 SELECCIONES
     "soccer_conmebol_world_cup_qualifiers": {"name": "🌎 ELIMINATORIAS", "type": "National", "min_plan": "Spartan"},
 
     # ⚽ FÚTBOL GLOBAL
+    "soccer_usa_mls": {"name": "🇺🇸 MLS", "type": "Club", "min_plan": "Spartan"}, # AQUI ESTA LA MLS
     "soccer_spain_la_liga": {"name": "🇪🇸 La Liga", "type": "Club", "min_plan": "Spartan"},
-    "soccer_usa_mls": {"name": "🇺🇸 MLS", "type": "Club", "min_plan": "Spartan"},
     "soccer_mexico_ligamx": {"name": "🇲🇽 Liga MX", "type": "Club", "min_plan": "Spartan"},
     "soccer_italy_serie_a": {"name": "🇮🇹 Serie A", "type": "Club", "min_plan": "Spartan"}, 
     "soccer_epl": {"name": "🇬🇧 Premier League", "type": "Club", "min_plan": "Olympian"}, 
@@ -105,7 +111,6 @@ def obtener_factor_titan(equipo, tipo_liga): return NATIONAL_POWER_DB.get(equipo
 def motor_titan_hibrido(home, away, cuota, sport_id, volatilidad, tipo_liga):
     prob_impl = 1 / cuota
     
-    # MOTOR MMA / BOXING / TENIS / BEISBOL (Binario Beta)
     if 'mma' in sport_id or 'boxing' in sport_id or 'baseball' in sport_id or 'tennis' in sport_id:
         factor_ajuste = 0
         if prob_impl > 0.70 and 'mma' in sport_id: factor_ajuste = 0.05 
@@ -113,7 +118,6 @@ def motor_titan_hibrido(home, away, cuota, sport_id, volatilidad, tipo_liga):
         prob_final = np.mean(sims + factor_ajuste > 0.5)
         return min(prob_final, 0.90) 
 
-    # MOTOR POISSON (Fútbol/Hockey)
     fuerza_home = obtener_factor_titan(home, tipo_liga); fuerza_away = obtener_factor_titan(away, tipo_liga)
     if 'soccer' in sport_id or 'nhl' in sport_id:
         lambda_home = 1.6; lambda_away = 1.1
@@ -123,8 +127,6 @@ def motor_titan_hibrido(home, away, cuota, sport_id, volatilidad, tipo_liga):
         g_away = np.random.poisson(lambda_away * volatilidad, 5000)
         wins = np.sum(g_home > g_away); validos = np.sum(g_home != g_away)
         return wins / validos if validos > 0 else 0
-
-    # MOTOR GAUSS (NBA/NFL)
     else:
         std_dev = volatilidad
         spread_estimado = (prob_impl - 0.5) * std_dev * 2
@@ -155,7 +157,8 @@ def app_sigma(lang_code):
         for key in list(st.session_state.keys()): del st.session_state[key]
         st.rerun()
 
-    if menu_nav == t["nav_options"][0]: # ESCÁNER
+    # --- PESTAÑA ESCÁNER ---
+    if menu_nav == t["nav_options"][0]: 
         api_key = st.sidebar.text_input(t["api_label"], type="password")
         bankroll = st.sidebar.number_input(t["bankroll_label"], value=1000, step=100)
         st.sidebar.markdown("---")
@@ -190,8 +193,10 @@ def app_sigma(lang_code):
         run = st.sidebar.button(t["run_btn"])
         st.title(f"📡 {plan_actual.upper()} TERMINAL")
         
+        # --- LÓGICA DE ESCANEO ---
         if run and api_key and deportes_reales:
-            st.session_state['last_results'] = []
+            # RESETEAMOS RESULTADOS PARA NUEVO ESCANEO
+            st.session_state['last_results'] = [] 
             ahora_utc = datetime.now(timezone.utc)
             with st.status(t["analyzing"], expanded=True):
                 for sport in deportes_reales:
@@ -218,7 +223,6 @@ def app_sigma(lang_code):
                             if not game['bookmakers']: continue
                             odds = game['bookmakers'][0]['markets'][0]['outcomes']
                             cuota = next((x['price'] for x in odds if x['name'] == home), 0)
-                            if 'icehockey' in sport and cuota > 5.0: continue
                             if cuota < 1.05: continue
                             
                             prob = motor_titan_hibrido(home, away, cuota, sport, VOLATILITY, data_sport["type"])
@@ -228,19 +232,26 @@ def app_sigma(lang_code):
                             if stake > 0:
                                 st.session_state['last_results'].append({"T": t_icon, "Hora": hora, "Torneo": data_sport['name'], "Partido": f"{home} vs {away}", "Cuota": cuota, "Prob": f"{prob_adj:.1%}", "Stake": f"${stake:.2f}", "Señal": tipo, "Raw_Stake": stake})
                         except: continue
+        
+        # --- VISUALIZACIÓN DE RESULTADOS (FUERA DEL BLOQUE RUN) ---
+        # ESTA ES LA CORRECCIÓN CLAVE: El código se ejecuta siempre que haya datos en memoria.
+        if st.session_state['last_results']:
+            st.subheader(t["results_table"])
+            df = pd.DataFrame(st.session_state['last_results']).drop(columns=["Raw_Stake"])
+            st.dataframe(df.style.applymap(lambda x: 'color: #4ade80' if 'FUERTE' in str(x) else '', subset=['Señal']), use_container_width=True)
             
-            if st.session_state['last_results']:
-                st.subheader(t["results_table"])
-                df = pd.DataFrame(st.session_state['last_results']).drop(columns=["Raw_Stake"])
-                st.dataframe(df.style.applymap(lambda x: 'color: #4ade80' if 'FUERTE' in str(x) else '', subset=['Señal']), use_container_width=True)
-                opciones_guardar = [f"{x['Partido']} ({x['Señal']})" for x in st.session_state['last_results']]
-                seleccion = st.selectbox("Select:", opciones_guardar)
-                if st.button(t["save_btn"]):
-                    item = next((x for x in st.session_state['last_results'] if f"{x['Partido']} ({x['Señal']})" == seleccion), None)
-                    if item: guardar_apuesta(item)
-            else: st.warning(t["no_results"])
+            # SELECTOR Y BOTÓN DE GUARDADO
+            opciones_guardar = [f"{x['Partido']} ({x['Señal']})" for x in st.session_state['last_results']]
+            seleccion = st.selectbox("Select:", opciones_guardar)
+            if st.button(t["save_btn"]):
+                item = next((x for x in st.session_state['last_results'] if f"{x['Partido']} ({x['Señal']})" == seleccion), None)
+                if item: guardar_apuesta(item)
+        else:
+            # Solo mostramos el aviso si no hay datos y no se está ejecutando
+            if not run: st.info(t["no_results"])
 
-    elif menu_nav == t["nav_options"][1]:
+    # --- OTRAS PESTAÑAS ---
+    elif menu_nav == t["nav_options"][1]: # CARTERA
         st.title(t["portfolio_title"])
         if st.session_state['portfolio']:
             df_port = pd.DataFrame(st.session_state['portfolio'])
@@ -248,7 +259,7 @@ def app_sigma(lang_code):
             if st.button(t["clean_btn"]): st.session_state['portfolio'] = []; st.rerun()
         else: st.info("Empty / Vacía")
 
-    elif menu_nav == t["nav_options"][2]:
+    elif menu_nav == t["nav_options"][2]: # WAR ROOM
         if st.session_state["license_key"] == "ADMIN-KEY-999":
             st.title(t["war_room_title"])
             sim_h = st.text_input("Home", "Fighter A"); sim_a = st.text_input("Away", "Fighter B"); sim_c = st.number_input("Odds", 1.90)
